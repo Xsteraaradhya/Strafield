@@ -1,0 +1,290 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Milky Way Starfield Adventure</title>
+  <style>
+    body {
+      margin: 0;
+      background: linear-gradient(to bottom, #1C2526, #FFFDD0);
+      font-family: "Arial", sans-serif;
+      color: #FFFDD0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      overflow: hidden;
+    }
+    h2 {
+      margin: 20px 0 10px;
+      font-size: 36px;
+      font-weight: 600;
+      letter-spacing: 2px;
+      color: #FFFDD0;
+    }
+    p.intro {
+      max-width: 600px;
+      text-align: center;
+      font-size: 18px;
+      line-height: 1.5;
+      margin: 10px 0;
+      color: #FFFDD0;
+    }
+    #container {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 20px;
+    }
+    canvas {
+      background: #1C2526;
+      border: 2px solid #FFFDD0;
+      border-radius: 8px;
+    }
+    #info {
+      width: 300px;
+      max-height: 700px;
+      padding: 15px;
+      background: rgba(28, 37, 38, 0.8);
+      border: 2px solid #FFFDD0;
+      border-radius: 8px;
+      overflow-y: auto;
+      font-size: 16px;
+      line-height: 1.5;
+      color: #FFFDD0;
+    }
+    #info h3 {
+      margin: 0 0 10px;
+      font-size: 20px;
+      color: #FFFDD0;
+    }
+    #info p {
+      margin: 5px 0;
+    }
+  </style>
+</head>
+<body>
+  <h2>Milky Way Starfield Adventure</h2>
+  <p class="intro">Right-click and drag to explore the vast beauty of our galaxy! Left-click a star to discover fun facts about the Milky Way.</p>
+  <div id="container">
+    <canvas id="c" width="1000" height="700" role="img" aria-label="Interactive 3D starfield simulation of the Milky Way"></canvas>
+    <div id="info">
+      <h3>Welcome to the Stars!</h3>
+      <p>Left-click a star to learn something amazing about our galaxy!</p>
+    </div>
+  </div>
+  <script>
+    const canvas = document.getElementById("c");
+    const ctx = canvas.getContext("2d");
+    const infoDiv = document.getElementById("info");
+    const w = canvas.width, h = canvas.height;
+
+    // Star data with varied properties
+    const stars = Array.from({ length: 2500 }, () => ({
+      pos: [(Math.random() - 0.5) * 4000, (Math.random() - 0.5) * 4000, (Math.random() - 0.5) * 4000],
+      brightness: Math.random() * 0.7 + 0.3,
+      size: Math.random() * 2.5 + 0.5,
+      color: `hsl(${Math.random() * 60 + 180}, ${Math.random() * 20 + 20}%, ${Math.random() * 40 + 60}%)`,
+      twinkle: Math.random() * 0.03,
+      fact: getRandomFact()
+    }));
+
+    // Random facts about the Milky Way
+    function getRandomFact() {
+      const facts = [
+        "The Milky Way is our galaxy, a barred spiral stretching 100,000 light-years across!",
+        "Our galaxy has 100–400 billion stars, and you’re seeing a tiny slice of them!",
+        "The Milky Way’s center hides a supermassive black hole called Sagittarius A*!",
+        "Stars in the Milky Way can be as old as 13 billion years—almost as old as the universe!",
+        "Our Sun takes 225–250 million years to orbit the Milky Way’s center once!",
+        "The Milky Way is part of the Local Group, a cosmic neighborhood with over 54 galaxies!",
+        "Some stars you see might be binary systems, dancing in pairs around each other!",
+        "The Milky Way’s spiral arms are packed with gas, dust, and star-forming regions!",
+        "Our galaxy might collide with Andromeda in 4.5 billion years, forming a new galaxy!",
+        "The Milky Way’s stars range from tiny red dwarfs to massive blue giants!"
+      ];
+      return facts[Math.floor(Math.random() * facts.length)];
+    }
+
+    let ax = 0, ay = 0, drag = false, lx, ly, time = 0;
+
+    // Rotation functions
+    const rotX = (p, a) => [
+      p[0],
+      p[1] * Math.cos(a) - p[2] * Math.sin(a),
+      p[1] * Math.sin(a) + p[2] * Math.cos(a)
+    ];
+    const rotY = (p, a) => [
+      p[0] * Math.cos(a) + p[2] * Math.sin(a),
+      p[1],
+      -p[0] * Math.sin(a) + p[2] * Math.cos(a)
+    ];
+
+    // Projection function
+    const proj = (p) => {
+      const z = p[2] + 2000;
+      const s = 2000 / Math.max(z, 0.1);
+      return [p[0] * s + w / 2, p[1] * s + h / 2, s, z];
+    };
+
+    function draw() {
+      ctx.clearRect(0, 0, w, h);
+      time += 0.016;
+
+      // Draw stars with twinkle effect
+      const starProjections = stars.map(star => {
+        const [x, y, s, z] = proj(rotX(rotY(star.pos, ay), ax));
+        const twinkle = star.brightness * (1 + Math.sin(time * star.twinkle) * 0.25);
+        return { x, y, s, z, size: star.size, color: star.color, brightness: twinkle, fact: star.fact };
+      }).sort((a, b) => b.z - a.z);
+
+      for (const star of starProjections) {
+        ctx.fillStyle = star.color;
+        ctx.globalAlpha = star.brightness;
+        ctx.beginPath();
+        ctx.arc(star.x, star.y, star.s * star.size, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      ctx.globalAlpha = 1.0;
+      ax += 0.0002; // Very gentle auto-rotation
+      ay += 0.0002;
+      requestAnimationFrame(draw);
+    }
+
+    // Mouse controls
+    canvas.oncontextmenu = e => e.preventDefault(); // Prevent default right-click menu
+    canvas.onmousedown = e => {
+      const rect = canvas.getBoundingClientRect();
+      const mx = e.clientX - rect.left;
+      const my = e.clientY - rect.top;
+      if (e.button === 0) { // Left-click for facts
+        const starProjections = stars.map(star => {
+          const [x, y, s, z] = proj(rotX(rotY(star.pos, ay), ax));
+          return { x, y, s, size: star.size, fact: star.fact };
+        });
+        let selectedStar = null;
+        for (const star of starProjections) {
+          const dist = Math.sqrt((mx - star.x) ** 2 + (my - star.y) ** 2);
+          if (dist < star.s * star.size + 5) {
+            selectedStar = star;
+            infoDiv.innerHTML = `<h3>Cosmic Fact</h3><p>${star.fact}</p>`;
+            break;
+          }
+        }
+        if (!selectedStar) {
+          infoDiv.innerHTML = `<h3>Welcome to the Stars!</h3><p>Left-click a star to learn something amazing about our galaxy!</p>`;
+        }
+      } else if (e.button === 2) { // Right-click for dragging
+        drag = true;
+        lx = e.clientX;
+        ly = e.clientY;
+      }
+    };
+    canvas.onmouseup = e => {
+      if (e.button === 2) drag = false;
+    };
+    canvas.onmousemove = e => {
+      if (drag) {
+        ay += (e.clientX - lx) * 0.001;
+        ax += (e.clientY - ly) * 0.001;
+        lx = e.clientX;
+        ly = e.clientY;
+      }
+    };
+
+    // Touch controls
+    canvas.ontouchstart = e => {
+      e.preventDefault();
+      const rect = canvas.getBoundingClientRect();
+      const mx = e.touches[0].clientX - rect.left;
+      const my = e.touches[0].clientY - rect.top;
+      if (e.touches.length === 1) {
+        const starProjections = stars.map(star => {
+          const [x, y, s, z] = proj(rotX(rotY(star.pos, ay), ax));
+          return { x, y, s, size: star.size, fact: star.fact };
+        });
+        let selectedStar = null;
+        for (const star of starProjections) {
+          const dist = Math.sqrt((mx - star.x) ** 2 + (my - star.y) ** 2);
+          if (dist < star.s * star.size + 5) {
+            selectedStar = star;
+            infoDiv.innerHTML = `<h3>Cosmic Fact</h3><p>${star.fact}</p>`;
+            break;
+          }
+        }
+        if (!selectedStar) {
+          infoDiv.innerHTML = `<h3>Welcome to the Stars!</h3><p>Tap a star to learn something amazing about our galaxy!</p>`;
+          drag = true;
+          lx = e.touches[0].clientX;
+          ly = e.touches[0].clientY;
+        }
+      }
+    };
+    canvas.ontouchend = () => drag = false;
+    canvas.ontouchmove = e => {
+      if (drag && !infoDiv.innerHTML.includes("Cosmic Fact")) {
+        ay += (e.touches[0].clientX - lx) * 0.001;
+        ax += (e.touches[0].clientY - ly) * 0.001;
+        lx = e.touches[0].clientX;
+        ly = e.touches[0].clientY;
+      }
+    };
+
+    // Keyboard controls for accessibility
+    document.addEventListener("keydown", e => {
+      if (e.key === "ArrowLeft") ay += 0.01;
+      if (e.key === "ArrowRight") ay -= 0.01;
+      if (e.key === "ArrowUp") ax -= 0.01;
+      if (e.key === "ArrowDown") ax += 0.01;
+      if (e.key === " ") {
+        const randomStar = stars[Math.floor(Math.random() * stars.length)];
+        infoDiv.innerHTML = `<h3>Cosmic Fact</h3><p>${randomStar.fact}</p>`;
+      }
+    });
+
+    draw();
+  </script>
+</body>
+</html>
